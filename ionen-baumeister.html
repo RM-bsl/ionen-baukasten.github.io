@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ionen-Baumeister: Der Bindungs-Simulator</title>
+    
+    <!-- React und ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    
+    <!-- Babel für JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Canvas Confetti für die Feier-Animation -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.2/dist/confetti.browser.min.js"></script>
+    
+    <style>
+        body {
+            background-color: #f0f9ff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        .block-enter {
+            animation: slideIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        @keyframes slideIn {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes pulse-subtle {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .animate-pulse-subtle {
+            animation: pulse-subtle 2s infinite;
+        }
+        /* Custom Pattern für den Ziel-Rahmen */
+        .target-frame {
+            background-image: repeating-linear-gradient(45deg, #e5e7eb 25%, transparent 25%, transparent 75%, #e5e7eb 75%, #e5e7eb), repeating-linear-gradient(45deg, #e5e7eb 25%, #f9fafb 25%, #f9fafb 75%, #e5e7eb 75%, #e5e7eb);
+            background-position: 0 0, 10px 10px;
+            background-size: 20px 20px;
+        }
+        /* Scrollbar Styling */
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 8px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+        
+        /* Animation für die Success-Box */
+        @keyframes popIn {
+            0% { transform: scale(0.9); opacity: 0; }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop-in {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // --- Icons ---
+        const IconBase = ({ children, size = 24, className = "" }) => (
+            <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width={size} 
+                height={size} 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className={className}
+            >
+                {children}
+            </svg>
+        );
+
+        const Beaker = (props) => (
+            <IconBase {...props}>
+                <path d="M4.5 3h15" />
+                <path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3" />
+                <path d="M6 14h12" />
+            </IconBase>
+        );
+
+        const CheckCircle = (props) => (
+            <IconBase {...props}>
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                <polyline points="22 4 12 14.01 9 11.01" />
+            </IconBase>
+        );
+
+        const AlertTriangle = (props) => (
+            <IconBase {...props}>
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+            </IconBase>
+        );
+
+        const RotateCcw = (props) => (
+            <IconBase {...props}>
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+            </IconBase>
+        );
+
+        const Info = (props) => (
+            <IconBase {...props}>
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+            </IconBase>
+        );
+
+        const FrameIcon = (props) => (
+            <IconBase {...props}>
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+            </IconBase>
+        );
+
+        const Calculator = (props) => (
+            <IconBase {...props}>
+                <rect width="16" height="20" x="4" y="2" rx="2" />
+                <line x1="8" x2="16" y1="6" y2="6" />
+                <line x1="16" x2="16" y1="14" y2="18" />
+                <path d="M16 10h.01" />
+                <path d="M12 10h.01" />
+                <path d="M8 10h.01" />
+                <path d="M12 14h.01" />
+                <path d="M8 14h.01" />
+                <path d="M12 18h.01" />
+                <path d="M8 18h.01" />
+            </IconBase>
+        );
+        
+        const ArrowRight = (props) => (
+            <IconBase {...props}>
+                <line x1="5" y1="12" x2="19" y2="12" />
+                <polyline points="12 5 19 12 12 19" />
+            </IconBase>
+        );
+
+        // --- Ionen-Datenbank ---
+        const CATIONS = [
+            { id: 'na', symbol: 'Na', charge: 1, name: 'Natrium-Ion', color: 'bg-yellow-400', border: 'border-yellow-600', textColor: 'text-yellow-900' },
+            { id: 'fe', symbol: 'Fe', charge: 2, name: 'Eisen(II)-Ion', color: 'bg-orange-500', border: 'border-orange-700', textColor: 'text-white' },
+            { id: 'al', symbol: 'Al', charge: 3, name: 'Aluminium-Ion', color: 'bg-gray-400', border: 'border-gray-600', textColor: 'text-gray-900' },
+        ];
+
+        const ANIONS = [
+            { id: 'cl', symbol: 'Cl', charge: 1, name: 'Chlorid-Ion', color: 'bg-green-500', border: 'border-green-700', textColor: 'text-white' },
+            { id: 'oh', symbol: 'OH', charge: 1, name: 'Hydroxid-Ion', color: 'bg-cyan-300', border: 'border-cyan-600', textColor: 'text-cyan-900', isPoly: true },
+            { id: 'o', symbol: 'O', charge: 2, name: 'Oxid-Ion', color: 'bg-red-500', border: 'border-red-700', textColor: 'text-white' },
+            { id: 'co3', symbol: 'CO3', charge: 2, name: 'Carbonat-Ion', color: 'bg-indigo-600', border: 'border-indigo-800', textColor: 'text-white', isPoly: true },
+        ];
+
+        // --- Hilfsfunktionen Mathe ---
+        const gcd = (a, b) => (!b ? a : gcd(b, a % b));
+        const lcm = (a, b) => (a * b) / gcd(a, b);
+
+        // --- Komponente: Chemische Formel (Baustein) ---
+        const ChemicalFormula = ({ symbol, charge, showCharge = false, className = "" }) => {
+            // Fallback für leere Symbole
+            const parts = (symbol || "").match(/([A-Za-z]+|\d+)/g) || [];
+            
+            // Formatierung der Ladung:
+            const absCharge = Math.abs(charge);
+            const sign = charge > 0 ? '+' : '-';
+            const chargeDisplay = absCharge === 1 ? sign : `${absCharge}${sign}`;
+
+            return (
+                <span className={`font-bold font-mono inline-flex items-baseline ${className}`}>
+                    {parts.map((part, i) => (
+                        /\d/.test(part) 
+                        ? <sub key={i} className="text-[0.6em] relative top-[0.3em]">{part}</sub> 
+                        : <span key={i}>{part}</span>
+                    ))}
+                    {showCharge && (
+                        <sup className="text-[0.6em] relative -top-[0.5em] ml-0.5">
+                            {chargeDisplay}
+                        </sup>
+                    )}
+                </span>
+            );
+        };
+
+        const App = () => {
+            // Startet jetzt OHNE Auswahl (null)
+            const [selectedCation, setSelectedCation] = useState(null);
+            const [selectedAnion, setSelectedAnion] = useState(null);
+            
+            const [cationCount, setCationCount] = useState(1);
+            const [anionCount, setAnionCount] = useState(1);
+            
+            const [showHelp, setShowHelp] = useState(false);
+
+            // Prüfen, ob beide ausgewählt sind
+            const hasSelection = selectedCation && selectedAnion;
+
+            // Berechnungen nur ausführen, wenn Auswahl existiert
+            const targetCharge = hasSelection ? lcm(selectedCation.charge, selectedAnion.charge) : 0;
+            const UNIT_WIDTH_PX = 60; // Basisbreite für Ladung 1
+            const BLOCK_HEIGHT_PX = 60; // Feste Höhe der Bausteine
+            
+            const targetWidthPx = targetCharge * UNIT_WIDTH_PX;
+            const totalFrameHeight = BLOCK_HEIGHT_PX * 2; 
+
+            // Reset bei Wechsel der Ionen
+            const handleCationChange = (ion) => {
+                setSelectedCation(ion);
+                setCationCount(1);
+                setAnionCount(1);
+            };
+
+            const handleAnionChange = (ion) => {
+                setSelectedAnion(ion);
+                setCationCount(1);
+                setAnionCount(1);
+            };
+
+            // Status-Logik
+            const totalPosCharge = hasSelection ? selectedCation.charge * cationCount : 0;
+            const totalNegCharge = hasSelection ? selectedAnion.charge * anionCount : 0;
+            
+            const isBalanced = hasSelection && (totalPosCharge === totalNegCharge);
+            const isTargetReached = hasSelection && (totalPosCharge === targetCharge && totalNegCharge === targetCharge);
+            const isOvershot = isBalanced && totalPosCharge > targetCharge;
+            const balanceDiff = totalPosCharge - totalNegCharge;
+
+            // --- Feier Animation Effekt ---
+            useEffect(() => {
+                if (isTargetReached) {
+                    const duration = 2 * 1000;
+                    const animationEnd = Date.now() + duration;
+                    const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 0 };
+                    const randomInRange = (min, max) => Math.random() * (max - min) + min;
+
+                    const interval = setInterval(function() {
+                        const timeLeft = animationEnd - Date.now();
+                        if (timeLeft <= 0) return clearInterval(interval);
+
+                        const particleCount = 50 * (timeLeft / duration);
+                        confetti({
+                            ...defaults, 
+                            particleCount,
+                            origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 }
+                        });
+                        confetti({
+                            ...defaults, 
+                            particleCount,
+                            origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 }
+                        });
+                    }, 250);
+                }
+            }, [isTargetReached]);
+
+            // --- Formel Generator ---
+            const generateResultFormulaHTML = () => {
+                if (!hasSelection) return { __html: "" };
+
+                const toSub = (num) => `<sub>${num}</sub>`;
+                let html = "";
+                
+                const cationSym = selectedCation.symbol.replace(/(\d+)/g, '<sub>$1</sub>');
+                html += cationSym;
+                if (cationCount > 1) html += toSub(cationCount);
+                
+                let anionSym = selectedAnion.symbol.replace(/(\d+)/g, '<sub>$1</sub>');
+                if (selectedAnion.isPoly && anionCount > 1) {
+                    html += `(${anionSym})`;
+                    html += toSub(anionCount);
+                } else {
+                    html += anionSym;
+                    if (anionCount > 1) html += toSub(anionCount);
+                }
+                
+                return { __html: html };
+            };
+            
+            // JSX Helper für schöne Reaktionsgleichung
+            const ReactionEquation = () => {
+                if (!hasSelection) return null;
+                return (
+                    <div className="flex items-center justify-center gap-2 text-sm md:text-base font-mono bg-gray-50 p-2 rounded border border-gray-100 mt-2">
+                        <span>
+                            {cationCount > 1 && cationCount}
+                            <ChemicalFormula symbol={selectedCation.symbol} charge={selectedCation.charge} showCharge={true} />
+                        </span>
+                        <span>+</span>
+                        <span>
+                            {anionCount > 1 && anionCount}
+                            <ChemicalFormula symbol={selectedAnion.symbol} charge={-selectedAnion.charge} showCharge={true} />
+                        </span>
+                        <span>→</span>
+                        <span dangerouslySetInnerHTML={generateResultFormulaHTML()} />
+                    </div>
+                );
+            };
+
+            return (
+                <div className="min-h-screen p-4 md:p-8 max-w-6xl mx-auto">
+                    {/* Header */}
+                    <header className="mb-8 text-center bg-white p-6 rounded-2xl shadow-sm border border-blue-100">
+                        <div className="flex items-center justify-center gap-3 mb-2">
+                            <Beaker className="w-8 h-8 text-blue-600" />
+                            <h1 className="text-3xl font-bold text-gray-800">Ionen-Baumeister</h1>
+                        </div>
+                        <p className="text-gray-600">Baue das kleinstmögliche "Rechteck", indem du die Ionen horizontal anordnest.</p>
+                    </header>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        
+                        {/* Linke Spalte: Steuerung */}
+                        <div className="lg:col-span-3 space-y-6">
+                            {/* Kation Auswahl */}
+                            <div className={`p-4 rounded-xl shadow-sm border transition-colors ${!selectedCation ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-200' : 'bg-white border-gray-200'}`}>
+                                <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full bg-blue-500"></span>
+                                    1. Wähle ein Kation (+)
+                                </h3>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {CATIONS.map(ion => (
+                                        <button
+                                            key={ion.id}
+                                            onClick={() => handleCationChange(ion)}
+                                            className={`p-3 rounded-lg flex items-center justify-between transition-all ${selectedCation?.id === ion.id ? 'ring-2 ring-blue-500 bg-blue-50' : 'hover:bg-gray-50 border border-gray-100 bg-white'}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-sm ${ion.color} ${ion.textColor}`}>
+                                                    <ChemicalFormula symbol={""} charge={ion.charge} showCharge={true} />
+                                                </div>
+                                                <div className="text-left">
+                                                    <div className="font-bold text-gray-800 flex items-center text-sm">
+                                                        <ChemicalFormula symbol={ion.symbol} charge={ion.charge} showCharge={true} />
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">{ion.name}</div>
+                                                </div>
+                                            </div>
+                                            {selectedCation?.id === ion.id && <CheckCircle className="w-5 h-5 text-blue-500" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Anion Auswahl */}
+                            <div className={`p-4 rounded-xl shadow-sm border transition-colors ${!selectedAnion ? 'bg-red-50 border-red-300 ring-2 ring-red-200' : 'bg-white border-gray-200'}`}>
+                                <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                                    <span className="w-3 h-3 rounded-full bg-red-500"></span>
+                                    2. Wähle ein Anion (-)
+                                </h3>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {ANIONS.map(ion => (
+                                        <button
+                                            key={ion.id}
+                                            onClick={() => handleAnionChange(ion)}
+                                            className={`p-3 rounded-lg flex items-center justify-between transition-all ${selectedAnion?.id === ion.id ? 'ring-2 ring-red-500 bg-red-50' : 'hover:bg-gray-50 border border-gray-100 bg-white'}`}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={`w-8 h-8 rounded flex items-center justify-center font-bold text-sm ${ion.color} ${ion.textColor}`}>
+                                                    <ChemicalFormula symbol={""} charge={-ion.charge} showCharge={true} />
+                                                </div>
+                                                <div className="text-left">
+                                                    <div className="font-bold text-gray-800 flex items-center text-sm">
+                                                        <ChemicalFormula symbol={ion.symbol} charge={-ion.charge} showCharge={true} />
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">{ion.name}</div>
+                                                </div>
+                                            </div>
+                                            {selectedAnion?.id === ion.id && <CheckCircle className="w-5 h-5 text-red-500" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Mittlere Spalte: Visualisierung */}
+                        <div className="lg:col-span-6 bg-white p-6 rounded-xl shadow-lg border border-gray-200 flex flex-col items-center relative min-h-[500px]">
+                            
+                            <h2 className="text-lg font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                <FrameIcon className="text-gray-400"/> Bauplatz
+                            </h2>
+                            <p className="text-sm text-gray-500 mb-8 text-center">
+                                {hasSelection ? "Fülle den gestrichelten Rahmen exakt aus (gleiche Länge)." : "Bereit zum Start."}
+                            </p>
+
+                            {/* Construction Area */}
+                            <div className="flex-1 w-full flex items-center justify-center overflow-x-auto pb-8 relative custom-scrollbar">
+                                
+                                {!hasSelection ? (
+                                    // Start-Screen (Empty State)
+                                    <div className="flex flex-col items-center justify-center text-gray-400 animate-pulse-subtle">
+                                        <div className="mb-4 relative">
+                                            <div className="w-20 h-20 border-4 border-dashed border-gray-300 rounded-lg absolute -top-2 -left-2 rotate-6"></div>
+                                            <div className="w-20 h-20 border-4 border-dashed border-gray-300 rounded-lg absolute top-2 left-2 -rotate-6"></div>
+                                            <div className="w-20 h-20 bg-gray-50 rounded-lg flex items-center justify-center relative z-10 border border-gray-200">
+                                                <Beaker size={40} className="text-gray-300" />
+                                            </div>
+                                        </div>
+                                        <p className="font-semibold text-lg">Wähle deine Bausteine!</p>
+                                        <p className="text-sm">Links erst ein Kation, dann ein Anion klicken.</p>
+                                    </div>
+                                ) : (
+                                    // Simulation
+                                    <div className="relative mx-auto min-w-max">
+                                        {/* Target Frame Visualization */}
+                                        <div 
+                                            className="absolute top-0 left-0 border-4 border-dashed border-gray-300 rounded-lg target-frame flex items-center justify-center pointer-events-none transition-all duration-500 z-0"
+                                            style={{ 
+                                                width: `${targetWidthPx}px`, 
+                                                height: `${totalFrameHeight}px`
+                                            }}
+                                        >
+                                            <span className="bg-white/80 px-2 py-1 rounded text-xs text-gray-400 font-mono">
+                                                Ziel: {targetCharge} Ladungseinheiten
+                                            </span>
+                                        </div>
+
+                                        {/* Active Building Blocks Container */}
+                                        <div className="flex flex-col shadow-2xl rounded-lg overflow-hidden z-10 relative bg-white/50">
+                                            
+                                            {/* Kation Reihe */}
+                                            <div className="flex flex-row h-[60px]">
+                                                {[...Array(cationCount)].map((_, i) => (
+                                                    <div 
+                                                        key={`cat-${i}`} 
+                                                        className={`h-full block-enter border-r border-white/20 ${selectedCation.color} relative flex items-center justify-center`}
+                                                        style={{ width: `${selectedCation.charge * UNIT_WIDTH_PX}px` }} 
+                                                    >
+                                                        <span className={`font-bold text-lg ${selectedCation.textColor} opacity-90`}>
+                                                            <ChemicalFormula symbol={selectedCation.symbol} charge={selectedCation.charge} showCharge={true} />
+                                                        </span>
+                                                        {i < cationCount - 1 && <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-black/10 rounded-l-sm"></div>}
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Anion Reihe */}
+                                            <div className="flex flex-row h-[60px]">
+                                                {[...Array(anionCount)].map((_, i) => (
+                                                    <div 
+                                                        key={`an-${i}`} 
+                                                        className={`h-full block-enter border-r border-white/20 ${selectedAnion.color} relative flex items-center justify-center`}
+                                                        style={{ width: `${selectedAnion.charge * UNIT_WIDTH_PX}px` }}
+                                                    >
+                                                        <span className={`font-bold text-lg ${selectedAnion.textColor} opacity-90`}>
+                                                            <ChemicalFormula symbol={selectedAnion.symbol} charge={-selectedAnion.charge} showCharge={true} />
+                                                        </span>
+                                                        {i < anionCount - 1 && <div className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-4 bg-black/10 rounded-l-sm"></div>}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                            </div>
+                            
+                            {/* Controls */}
+                            {hasSelection && (
+                                <div className="w-full flex justify-center gap-12 mt-4 animate-in slide-in-from-bottom-4 duration-500">
+                                    <div className="flex flex-col items-center gap-2 w-32">
+                                        <span className="text-xs font-bold text-blue-600">Gesamt: +{totalPosCharge}</span>
+                                        <div className="flex items-center justify-between w-full bg-gray-100 rounded-full p-1">
+                                            <button 
+                                                onClick={() => setCationCount(Math.max(1, cationCount - 1))}
+                                                className="w-8 h-8 rounded-full bg-white shadow text-gray-600 flex items-center justify-center font-bold hover:bg-gray-50"
+                                                disabled={cationCount <= 1}
+                                            >-</button>
+                                            <span className="font-bold text-lg">{cationCount}</span>
+                                            <button 
+                                                onClick={() => setCationCount(cationCount + 1)}
+                                                className="w-8 h-8 rounded-full bg-blue-500 text-white shadow flex items-center justify-center font-bold hover:bg-blue-600"
+                                            >+</button>
+                                        </div>
+                                        <span className="text-xs text-gray-400">Anzahl Kationen</span>
+                                    </div>
+
+                                    <div className="flex flex-col items-center gap-2 w-32">
+                                        <span className="text-xs font-bold text-red-600">Gesamt: -{totalNegCharge}</span>
+                                        <div className="flex items-center justify-between w-full bg-gray-100 rounded-full p-1">
+                                            <button 
+                                                onClick={() => setAnionCount(Math.max(1, anionCount - 1))}
+                                                className="w-8 h-8 rounded-full bg-white shadow text-gray-600 flex items-center justify-center font-bold hover:bg-gray-50"
+                                                disabled={anionCount <= 1}
+                                            >-</button>
+                                            <span className="font-bold text-lg">{anionCount}</span>
+                                            <button 
+                                                onClick={() => setAnionCount(anionCount + 1)}
+                                                className="w-8 h-8 rounded-full bg-red-500 text-white shadow flex items-center justify-center font-bold hover:bg-red-600"
+                                            >+</button>
+                                        </div>
+                                        <span className="text-xs text-gray-400">Anzahl Anionen</span>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+
+                        {/* Rechte Spalte: Ergebnis & Didaktik */}
+                        <div className="lg:col-span-3 space-y-6">
+                            
+                            {/* Status Box */}
+                            {hasSelection ? (
+                                <div className={`p-6 rounded-xl border-2 transition-all duration-500 ${isBalanced ? (isOvershot ? 'bg-orange-50 border-orange-300' : 'bg-green-50 border-green-400 shadow-lg scale-100') : 'bg-yellow-50 border-yellow-300'}`}>
+                                    <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
+                                        {isBalanced ? 
+                                            (isOvershot ? <AlertTriangle className="text-orange-500"/> : <CheckCircle className="text-green-600" />) 
+                                            : <AlertTriangle className="text-yellow-600" />
+                                        }
+                                        {isBalanced ? (isOvershot ? "Zu lang!" : "Ladungsausgleich!") : "Nicht ausgeglichen"}
+                                    </h2>
+                                    
+                                    <div className="space-y-4">
+                                        <div className="bg-white/60 p-3 rounded-lg text-sm space-y-2 border border-black/5">
+                                            <div className="flex justify-between items-center text-blue-800">
+                                                <span>Kationen:</span>
+                                                <span className="font-mono font-bold">
+                                                    {cationCount} &times; (+{selectedCation.charge}) = +{totalPosCharge}
+                                                </span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-red-800">
+                                                <span>Anionen:</span>
+                                                <span className="font-mono font-bold">
+                                                    {anionCount} &times; (-{selectedAnion.charge}) = -{totalNegCharge}
+                                                </span>
+                                            </div>
+                                            <div className={`flex justify-between items-center pt-2 border-t border-black/10 font-bold ${isBalanced ? 'text-green-700' : 'text-gray-500'}`}>
+                                                <span>Netto:</span>
+                                                <span>{totalPosCharge - totalNegCharge === 0 ? '0 (Neutral)' : (totalPosCharge - totalNegCharge > 0 ? `+${totalPosCharge - totalNegCharge}` : totalPosCharge - totalNegCharge)}</span>
+                                            </div>
+                                        </div>
+
+                                        {!isBalanced && (
+                                            <div className="text-gray-700 text-sm">
+                                                {balanceDiff > 0 ? (
+                                                    <p>Positive Überladung. Wir brauchen mehr negative Ladungsträger.</p>
+                                                ) : (
+                                                    <p>Negative Überladung. Wir brauchen mehr positive Ladungsträger.</p>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {isTargetReached && (
+                                            <div className="animate-pop-in">
+                                                <p className="text-sm font-semibold text-gray-600 mb-1">Reaktionsgleichung & Formel:</p>
+                                                <ReactionEquation />
+                                                <p className="mt-2 text-xs text-green-700 text-center font-bold">
+                                                    🎉 Perfekt! Das Ionen-Gitter ist stabil. 🎉
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            ) : (
+                                // Platzhalter Status Box wenn nichts ausgewählt
+                                <div className="p-6 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 flex flex-col items-center justify-center text-center h-48">
+                                    <p className="text-gray-400 mb-2 font-semibold">Warte auf Eingabe...</p>
+                                    <p className="text-xs text-gray-400">Das Ergebnis erscheint hier, sobald du Ionen ausgewählt hast.</p>
+                                </div>
+                            )}
+
+                            {/* Didaktische Info Box */}
+                            <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                                <button 
+                                    onClick={() => setShowHelp(!showHelp)}
+                                    className="flex items-center justify-between w-full text-left font-semibold text-gray-700 hover:text-blue-600"
+                                >
+                                    <span className="flex items-center gap-2"><Calculator size={20}/> Didaktik-Tipp</span>
+                                    <span>{showHelp ? '▲' : '▼'}</span>
+                                </button>
+                                
+                                {showHelp && (
+                                    <div className="mt-3 text-sm text-gray-600 space-y-2 border-t pt-2">
+                                        <p>
+                                            <strong>Ladungserhaltung:</strong> Eine Ionenverbindung ist nach außen elektrisch neutral. 
+                                            Das Produkt aus Anzahl und Ladung muss für Kationen und Anionen betragsmäßig gleich sein.
+                                        </p>
+                                        <p>
+                                            <strong>Schreibweise:</strong> Ladungen werden hochgestellt (z.B. 2+). Ist die Ladung 1, lässt man die Zahl weg (nur + oder -).
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button 
+                                onClick={() => {
+                                    setSelectedCation(null);
+                                    setSelectedAnion(null);
+                                    setCationCount(1);
+                                    setAnionCount(1);
+                                }}
+                                className="w-full py-2 px-4 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                            >
+                                <RotateCcw size={16} /> Alles zurücksetzen
+                            </button>
+
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
